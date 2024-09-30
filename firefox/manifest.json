@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Hello Extensions of the world from firefox",
+  "description": "Base Level Extension",
+  "version": "1.0",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "hello_extensions.png"
+  },
+  "background": {
+    "scripts": ["assets/background.js"],
+    "type": "module"
+  }
+}
