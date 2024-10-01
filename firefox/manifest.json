@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Hello Extensions of the world from firefox",
+  "name": "Open Dictionary",
   "description": "Base Level Extension",
-  "version": "1.0",
+  "version": "0.0.0",
   "action": {
     "default_popup": "popup.html",
     "default_icon": "hello_extensions.png"
@@ -10,5 +10,18 @@
   "background": {
     "scripts": ["assets/background.js"],
     "type": "module"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*/*"],
+      "js": ["assets/browser-polyfill.min.js", "assets/content_script.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "matches": ["https://*/*"],
+      "resources": ["assets/*.js"]
+    }
+  ],
+  "permissions": []
 }
