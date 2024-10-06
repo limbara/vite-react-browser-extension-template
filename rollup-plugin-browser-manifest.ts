@@ -1,6 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import rollup from "rollup";
+import rollup, { PluginContext } from "rollup";
+import { JsonObject, JsonValue, PackageJson } from "type-fest";
+
+/**
+ * A function type that accept both manifest & package json source, returning new value to write into manifest, returning undefined will exclude the field to be written from manifest
+ */
+type FieldSyncFn = (
+  this: PluginContext,
+  manifestJson: JsonObject,
+  packageJson: PackageJson
+) => JsonValue | undefined;
 
 type PluginOptions = {
   /**
@@ -15,14 +25,17 @@ type PluginOptions = {
 
   /**
    * sync package json related properties to manifest.json
+   * @example sync manifest.json field 'description' to package json 'name'
+   * ```
+   *  {
+   *    "description" : "name"
+   *  }
+   * ```
+   * @default {}
    */
-  readonly syncPackageJson?:
-    | Partial<{
-        name: boolean;
-        description: boolean;
-        version: boolean;
-      }>
-    | boolean;
+  readonly syncPackageJson?: Partial<
+    Record<string, boolean | string | FieldSyncFn>
+  >;
 };
 
 const packageJsonPath = path.resolve(__dirname, "package.json");
@@ -33,9 +46,10 @@ const packageJsonPath = path.resolve(__dirname, "package.json");
  * @returns
  */
 const plugin = (options: PluginOptions): rollup.Plugin => {
-  const { src: srcAbsPath, dest, syncPackageJson = false } = options;
+  const { src: srcAbsPath, dest, syncPackageJson = {} } = options;
 
   const manifestFileName = path.basename(srcAbsPath);
+  const hasToSyncPackageJson = Object.keys(syncPackageJson).length !== 0;
 
   return {
     name: "rollup-plugin-browser-manifest",
@@ -46,19 +60,16 @@ const plugin = (options: PluginOptions): rollup.Plugin => {
         this.error('options "src" is not a manifest.json file');
       }
 
-      if (this.meta.watchMode) {
-        this.addWatchFile(srcAbsPath);
-
-        if (syncPackageJson) {
-          this.addWatchFile(packageJsonPath);
-        }
+      if (this.meta.watchMode && hasToSyncPackageJson) {
+        this.addWatchFile(packageJsonPath);
       }
 
-      if (syncPackageJson === false) {
+      if (!hasToSyncPackageJson) {
         this.emitFile({
           type: "asset",
           name: manifestFileName,
           originalFileName: srcAbsPath,
+          source: await fs.readFile(srcAbsPath, { encoding: "utf-8" }),
         });
 
         return;
@@ -67,32 +78,53 @@ const plugin = (options: PluginOptions): rollup.Plugin => {
       const manifestSource = JSON.parse(
         await fs.readFile(srcAbsPath, { encoding: "utf-8" })
       );
+
       const packageJsonSource = JSON.parse(
         await fs.readFile(packageJsonPath, { encoding: "utf-8" })
       );
 
-      let toSyncProps = {
-        name: packageJsonSource.name ?? manifestSource.name ?? "",
-        description:
-          packageJsonSource.description ?? manifestSource.description ?? "",
-        version: packageJsonSource.version ?? manifestSource.version ?? "0.0.0",
-      };
+      const toSyncEntries = Object.entries(syncPackageJson).reduce(
+        (acc, [manifestField, jsonFieldOrSyncFnOrBool]) => {
+          switch (typeof jsonFieldOrSyncFnOrBool) {
+            case "function":
+              acc.push([
+                manifestField,
+                jsonFieldOrSyncFnOrBool.call(
+                  this,
+                  manifestSource,
+                  packageJsonSource
+                ),
+              ]);
+              break;
+            case "string":
+              acc.push([
+                manifestField,
+                packageJsonSource[jsonFieldOrSyncFnOrBool] ??
+                  manifestSource[manifestField],
+              ]);
+              break;
+            case "boolean":
+              if (jsonFieldOrSyncFnOrBool) {
+                acc.push([
+                  manifestField,
+                  packageJsonSource[manifestField] ??
+                    manifestSource[manifestField],
+                ]);
+              }
+              break;
+          }
 
-      if (typeof syncPackageJson === "object") {
-        toSyncProps = Object.entries(syncPackageJson).reduce(
-          (acc, [key, value]) => {
-            if (value === true) {
-              Object.assign(acc, {
-                [key]: toSyncProps[key as keyof typeof toSyncProps],
-              });
-            }
-            return acc;
-          },
-          {} as typeof toSyncProps
-        );
-      }
+          return acc;
+        },
+        [] as [string, JsonValue | undefined][]
+      );
 
-      const source = Object.assign(manifestSource, toSyncProps);
+      const source = Object.assign(
+        manifestSource,
+        Object.fromEntries(
+          toSyncEntries.filter((_key, _value) => _value !== undefined)
+        )
+      );
 
       this.emitFile({
         type: "asset",
