@@ -3,6 +3,7 @@ import rollupPluginBrowserManifest from "./rollup-plugin-browser-manifest";
 import { mergeConfig, defineConfig } from "vite";
 import viteConfigBase from "./vite.config.base";
 import { isValidManifestVersion, parsePackageJsonAuthor } from "./utils";
+import zip from "./rollup-plugin-zip";
 
 const browserManifest = path.resolve(__dirname, "firefox", "manifest.json");
 
@@ -24,9 +25,7 @@ export default defineConfig((configEnv) => {
                   if (typeof version !== "string")
                     this.error(
                       `version is not typeof string. version : ${JSON.stringify(
-                        version,
-                        null,
-                        2
+                        version
                       )}`
                     );
                   if (
@@ -68,6 +67,17 @@ export default defineConfig((configEnv) => {
                 },
               },
             }),
+            ...(isProduction
+              ? [
+                  zip({
+                    src: "**",
+                    verbose: true,
+                    fastGlobOptions: {
+                      cwd: path.resolve(__dirname, "dist", "firefox"),
+                    },
+                  }),
+                ]
+              : []),
           ],
         },
       },
